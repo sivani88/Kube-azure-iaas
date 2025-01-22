@@ -1,0 +1,149 @@
+# Création d'un Cluster Kubernetes en mode IaaS sur Azure avec Terraform
+
+Ce projet permet de créer un cluster Kubernetes en mode IaaS sur Azure à l'aide de **Terraform** et d'un script d'installation. Le cluster comprend un master et trois nodes. Le master est déployé en premier pour générer un fichier contenant la commande `kubeadm join`, utilisée ensuite pour ajouter les nodes au cluster.
+
+---
+
+## Pré-requis
+
+Avant de commencer, assurez-vous d'avoir :
+
+- Un compte Azure actif avec les autorisations nécessaires.
+- **Terraform** installé sur votre machine locale.
+- Une paire de clés SSH valide (publique et privée).
+- Un fichier `terraform.tfvars` pour vos variables sensibles.
+
+---
+
+## Architecture
+
+- **Master** : 1 machine virtuelle pour la gestion du cluster.
+- **Nodes** : 3 machines virtuelles agissant comme workers.
+- **Provisioners** : Utilisation de scripts pour installer Kubernetes sur chaque machine.
+
+---
+
+## Installation
+
+### 1. Cloner le projet
+
+Clonez le dépôt Git et accédez au répertoire du projet :
+
+```bash
+git clone <URL_DU_DEPOT>
+cd <NOM_DU_DEPOT>
+```
+
+---
+
+### 2. Configurer les variables Terraform
+
+Créez un fichier `terraform.tfvars` contenant vos informations Azure :
+
+```hcl
+azure_subscription_id = "<votre_subscription_id>"
+azure_client_id       = "<votre_client_id>"
+azure_client_secret   = "<votre_client_secret>"
+azure_tenant_id       = "<votre_tenant_id>"
+location              = "northeurope"
+resource_group_name   = "k8s-cluster-rg"
+ssh_user              = "azureuser"
+ssh_key               = "/chemin/vers/votre/id_rsa"
+```
+
+---
+
+### 3. Déployer le Master
+
+Initialisez Terraform et appliquez la configuration pour le master :
+
+```bash
+terraform init
+terraform apply -target=module.master
+```
+
+Une fois le master déployé, un fichier `join_command.txt` sera généré avec la commande `kubeadm join` et les tokens requis.
+
+---
+
+### 4. Ajouter les Nodes au Cluster
+
+Une fois le master configuré, déployez les nodes en appliquant la configuration suivante :
+
+```bash
+terraform apply -target=module.nodes
+```
+
+Terraform utilisera le fichier `join_command.txt` pour exécuter la commande de jonction sur chaque node via un script.
+
+---
+
+### 5. Vérifier le Cluster
+
+Connectez-vous au master pour vérifier que les nodes sont bien ajoutés :
+
+```bash
+ssh azureuser@<IP_MASTER>
+kubectl get nodes
+```
+
+Vous devriez voir le master et les 3 nodes dans la liste avec le statut **Ready**.
+
+---
+
+## Structure du Projet
+
+- **`main.tf`** : Configuration principale de Terraform.
+- **`modules/`** : Modules Terraform pour le master et les nodes.
+- **`scripts/`** : Contient les scripts d'installation (ég. `install_worker.sh`).
+- **`join_command.txt`** : Fichier contenant la commande `kubeadm join`.
+
+---
+
+## Exemple de ressource Terraform
+
+Voici un exemple de ressource pour provisionner un node avec un script et la commande de jonction :
+
+```hcl
+resource "null_resource" "install_worker" {
+  depends_on = [azurerm_virtual_machine.k8s-worker1]
+
+  connection {
+    type        = "ssh"
+    user        = var.ssh_user
+    host        = azurerm_public_ip.k8s-worker1.ip_address
+    private_key = file(var.ssh_key)
+  }
+
+  provisioner "file" {
+    source      = "./scripts/install_worker.sh"
+    destination = "/tmp/install_worker.sh"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "chmod +x /tmp/install_worker.sh",
+      "/tmp/install_worker.sh"
+    ]
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "sudo ${var.kubeadm_join_command}"
+    ]
+  }
+}
+```
+
+---
+
+## Remarques
+
+- **Sécurité** : Ne partagez pas le fichier `join_command.txt` car il contient des informations sensibles.
+- **Logs** : Les journaux Terraform permettent de déboguer les problèmes lors de l'exécution des scripts.
+
+---
+
+## Licence
+
+Ce projet est sous licence MIT. Consultez le fichier `LICENSE` pour plus de détails.
