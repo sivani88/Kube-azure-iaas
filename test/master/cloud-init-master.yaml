@@ -1,0 +1,14 @@
+#cloud-config
+runcmd:
+  - apt-get update
+  - apt-get install -y apt-transport-https ca-certificates curl
+  - curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
+  - apt-add-repository "deb http://apt.kubernetes.io/ kubernetes-xenial main"
+  - apt-get update
+  - apt-get install -y kubelet kubeadm kubectl
+  - apt-mark hold kubelet kubeadm kubectl
+  - kubeadm init --pod-network-cidr=10.244.0.0/16
+  - mkdir -p /home/${var.admin_username}/.kube
+  - cp -i /etc/kubernetes/admin.conf /home/${var.admin_username}/.kube/config
+  - chown ${var.admin_username}:${var.admin_username} /home/${var.admin_username}/.kube/config
+  - kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
